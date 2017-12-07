@@ -1,6 +1,6 @@
 {
   "name": "winston-daily-rotate-file",
-  "version": "1.4.6",
+  "version": "1.7.2",
   "description": "A transport for winston which logs to a rotating file each day.",
   "main": "index.js",
   "scripts": {
@@ -28,10 +28,9 @@
     "winston": "2.x"
   },
   "devDependencies": {
-    "chai": "^3.5.0",
-    "eslint": "^2.10.2",
-    "eslint-config-xo-space": "^0.13.0",
-    "mkdirp": "^0.5.1",
+    "chai": "3.5.0",
+    "eslint": "2.10.2",
+    "eslint-config-xo-space": "0.13.0",
     "mocha": "2.4.5",
     "moment": "^2.13.0",
     "rimraf": "^2.5.2",
@@ -45,6 +44,6 @@
     }
   },
   "dependencies": {
-    "winston": "^2.3.1"
+    "mkdirp": "0.5.1"
   }
 }

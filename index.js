@@ -8,6 +8,7 @@ var Transport = require('winston').Transport;
 var Stream = require('stream').Stream;
 var os = require('os');
 var winston = require('winston');
+var mkdirp = require('mkdirp');
 var zlib = require('zlib');
 
 var weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -78,8 +79,10 @@ var DailyRotateFile = module.exports = function (options) {
   this.eol = options.eol || os.EOL;
   this.maxRetries = options.maxRetries || 2;
   this.prepend = options.prepend || false;
+  this.createTree = options.createTree || false;
   this.localTime = options.localTime || false;
   this.zippedArchive = options.zippedArchive || false;
+  this.maxDays = options.maxDays || 0;
 
   if (this.json) {
     this.stringify = options.stringify;
@@ -288,17 +291,18 @@ DailyRotateFile.prototype.query = function (options, callback) {
   var self = this;
 
   // TODO when maxfilesize rotate occurs
-  var createdFiles = self._currentFiles; // _currentFiles array is already sorted chronologically
+  var createdFiles = self._currentFiles.slice(0); // Clone already sorted _currentFiles array
   var results = [];
   var row = 0;
   options = self.normalizeQuery(options);
 
+  if (createdFiles.length === 0 && callback) {
+    callback(null, results);
+  }
+
   // Edit so that all created files are read:
   (function readNextFile(nextFile) {
     if (!nextFile) {
-      if (callback) {
-        callback(null, results);
-      }
       return;
     }
     var file = path.join(self.dirname, nextFile);
@@ -362,7 +366,7 @@ DailyRotateFile.prototype.query = function (options, callback) {
     }
 
     function push(log) {
-      if (options.rows && results.length >= options.rows) {
+      if (options.rows && results.length >= options.rows && options.order !== 'desc') {
         if (stream.readable) {
           stream.destroy();
         }
@@ -377,6 +381,11 @@ DailyRotateFile.prototype.query = function (options, callback) {
         log = obj;
       }
 
+      if (options.order === 'desc') {
+        if (results.length >= options.rows) {
+          results.shift();
+        }
+      }
       results.push(log);
     }
 
@@ -452,6 +461,7 @@ DailyRotateFile.prototype.open = function (callback) {
     return callback(true);
   } else if (!this._stream || (this.maxsize && this._size >= this.maxsize) ||
     this._filenameHasExpired()) {
+    this._cleanOldFiles();
     //
     // If we dont have a stream or have exceeded our size, then create
     // the next stream and respond with a value indicating that
@@ -544,6 +554,10 @@ DailyRotateFile.prototype._createStream = function () {
 
         self._stream.end();
         self._stream.destroySoon();
+      }
+
+      if (self.createTree) {
+        mkdirp.sync(path.dirname(fullname));
       }
 
       self._size = size;
@@ -785,5 +799,55 @@ DailyRotateFile.prototype._getTime = function (timeType) {
     return now.getUTCMinutes();
   } else if (timeType === 'day') {
     return now.getUTCDay();
+  }
+};
+
+// ### @private function _cleanOldFiles ()
+// Remove old log files
+// based on "maxDays" option
+DailyRotateFile.prototype._cleanOldFiles = function () {
+  var self = this;
+  var millisecondsInDay = 86400000;
+  var now = Date.now();
+
+  function removeOldFile(file) {
+    fs.unlink(self.dirname + path.sep + file, function (errUnlink) {
+      if (errUnlink) {
+        console.error('Error removing file ', file);
+      }
+    });
+  }
+
+  function tryToRemoveLogFile(file) {
+    var completeFileName = self.dirname + path.sep + file;
+    fs.stat(completeFileName, function (errStats, stats) {
+      if (errStats) {
+        console.error('Error stats file ', file, errStats);
+        return;
+      }
+
+      var lastChangeTimestamp = ((stats.mtime && stats.mtime.getTime()) || 0);
+      var lifeTime = now - lastChangeTimestamp;
+      if (stats.isFile() && lifeTime > (millisecondsInDay * self.maxDays)) {
+        removeOldFile(file);
+      }
+    });
+  }
+
+  // if not maxDays specified, do not remove old log files
+  if (self.maxDays) {
+    fs.readdir(self.dirname, function (err, files) {
+      if (err) {
+        console.error('Error reading directory ', self.dirname, err);
+        return;
+      }
+
+      var fileNameReg = new RegExp(self._basename, 'g');
+      files.forEach(function (file) {
+        if (/.log/.test(file) && fileNameReg.test(file)) {
+          tryToRemoveLogFile(file);
+        }
+      });
+    });
   }
 };

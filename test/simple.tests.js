@@ -43,6 +43,36 @@ describe('winston/transports/daily-rotate-file', function () {
   });
 
   describe('an instance of the transport', function () {
+    describe('with / characters in the datePattern', function () {
+      it('should create the full path', function (done) {
+        var now = moment();
+        var transport = new DailyRotateFile({
+          filename: path.join(fixturesDir, 'application'),
+          datePattern: '/yyyy/MM/dd.log',
+          createTree: true
+        });
+
+        transport.log('info', 'test message', {}, function (err) {
+          if (err) {
+            done(err);
+          }
+
+          fs.readFile(path.join(fixturesDir, 'application', now.format('YYYY'), now.format('MM'), now.format('DD') + '.log'), 'utf8', function (err, contents) {
+            if (err) {
+              done(err);
+            }
+
+            var lines = contents.split('\n').filter(function (n) {
+              return n !== '';
+            });
+
+            expect(lines.length).to.equal(1);
+            done();
+          });
+        });
+      });
+    });
+
     describe('with default datePatterns', function () {
       it('should have a proper filename when prepend option is false', function () {
         var now = moment().utc().format('YYYY-MM-DD');
@@ -295,8 +325,9 @@ describe('winston/transports/daily-rotate-file', function () {
             done();
           });
 
-          afterEach(function () {
+          afterEach(function (done) {
             tk.reset();
+            done();
           });
 
           it('should create log with proper timestamp', function (done) {
@@ -370,8 +401,9 @@ describe('winston/transports/daily-rotate-file', function () {
           done();
         });
 
-        afterEach(function () {
+        afterEach(function (done) {
           tk.reset();
+          done();
         });
 
         it('should properly rotate log with old files getting deleted', function (done) {
@@ -722,52 +754,37 @@ describe('winston/transports/daily-rotate-file', function () {
         if (err) {
           done(err);
         }
-        transport.log('error', 'test message', {}, function (err) {
+
+        var filesCreated = fs.readdirSync(rotationLogPath);
+        expect(filesCreated.length).to.eql(1);
+        expect(filesCreated).to.include(pattern.oldfile);
+        self.time = new Date(pattern.mid);
+        tk.travel(self.time);
+        transport.log('error', '2nd test message', {}, function (err) {
           if (err) {
             done(err);
           }
 
-          var filesCreated = fs.readdirSync(rotationLogPath);
-          expect(filesCreated.length).to.eql(1);
-          expect(filesCreated).to.include(pattern.oldfile);
-          self.time = new Date(pattern.mid);
+          filesCreated = fs.readdirSync(rotationLogPath);
+          expect(filesCreated.length).to.eql(2);
+          expect(filesCreated).to.include(pattern.oldfile + '.gz');
+          expect(filesCreated).to.include(pattern.midfile);
+          self.time = new Date(pattern.end);
           tk.travel(self.time);
-          transport.log('error', '2nd test message', {}, function (err) {
+          transport.log('error', '3rd test message', {}, function (err) {
             if (err) {
               done(err);
             }
-            transport.log('error', 'test message', {}, function (err) {
-              if (err) {
-                done(err);
-              }
 
-              filesCreated = fs.readdirSync(rotationLogPath);
-              expect(filesCreated.length).to.eql(2);
-              expect(filesCreated).to.include(pattern.oldfile + '.gz');
-              expect(filesCreated).to.include(pattern.midfile);
-              self.time = new Date(pattern.end);
-              tk.travel(self.time);
-              transport.log('error', '3rd test message', {}, function (err) {
-                if (err) {
-                  done(err);
-                }
-                transport.log('error', 'test message', {}, function (err) {
-                  if (err) {
-                    done(err);
-                  }
+            filesCreated = fs.readdirSync(rotationLogPath);
+            expect(filesCreated.length).to.eql(3);
+            expect(filesCreated).to.not.include(pattern.newfile + '.1');
+            expect(filesCreated).to.include(pattern.newfile);
+            expect(filesCreated).to.include(pattern.midfile + '.gz');
+            expect(filesCreated).to.include(pattern.oldfile + '.gz');
+            transport.close();
 
-                  filesCreated = fs.readdirSync(rotationLogPath);
-                  expect(filesCreated.length).to.eql(3);
-                  expect(filesCreated).to.not.include(pattern.newfile + '.1');
-                  expect(filesCreated).to.include(pattern.newfile);
-                  expect(filesCreated).to.include(pattern.midfile + '.gz');
-                  expect(filesCreated).to.include(pattern.oldfile + '.gz');
-                  transport.close();
-
-                  done();
-                });
-              });
-            });
+            done();
           });
         });
       });
